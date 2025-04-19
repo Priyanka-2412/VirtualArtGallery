@@ -27,5 +27,6 @@ namespace VirtualArtGallery.Dao
         bool AddArtworkToFavorite(int userId, int artworkId);
         bool RemoveArtworkFromFavorite(int userId, int artworkId);
         List<Artwork> GetUserFavoriteArtworks(int userId);
+        List<Artwork> GetAllArtworks();
     }
 }

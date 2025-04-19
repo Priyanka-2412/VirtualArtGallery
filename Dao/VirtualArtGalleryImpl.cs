@@ -23,8 +23,9 @@ namespace VirtualArtGallery.Dao
         public bool AddArtwork(Artwork artwork)
         {
             string query = @"INSERT INTO [Artwork] 
-                (Title, Descriptions, CreationDate, Mediums, ImageURL, ArtistID) 
-                VALUES (@Title, @Descriptions, @CreationDate, @Mediums, @ImageURL, @ArtistID)";
+                     (Title, Descriptions, CreationDate, Mediums, ImageURL, ArtistID) 
+                     OUTPUT INSERTED.ArtworkID
+                     VALUES (@Title, @Descriptions, @CreationDate, @Mediums, @ImageURL, @ArtistID)";
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@Title", artwork.Title);
             cmd.Parameters.AddWithValue("@Descriptions", artwork.Descriptions);
@@ -32,7 +33,17 @@ namespace VirtualArtGallery.Dao
             cmd.Parameters.AddWithValue("@Mediums", artwork.Mediums);
             cmd.Parameters.AddWithValue("@ImageURL", artwork.ImageURL);
             cmd.Parameters.AddWithValue("@ArtistID", artwork.ArtistID);
-            return cmd.ExecuteNonQuery() > 0;
+
+            try
+            {
+                artwork.ArtworkID = (int)cmd.ExecuteScalar();
+                return artwork.ArtworkID > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error adding artwork: {ex.Message}");
+                return false;
+            }
         }
 
         public bool UpdateArtwork(Artwork artwork)
@@ -53,10 +64,17 @@ namespace VirtualArtGallery.Dao
 
         public bool RemoveArtwork(int artworkId)
         {
-            string query = "DELETE FROM [Artwork] WHERE ArtworkID = @ArtworkID";
-            SqlCommand cmd = new SqlCommand(query, connection);
-            cmd.Parameters.AddWithValue("@ArtworkID", artworkId);
-            return cmd.ExecuteNonQuery() > 0;
+            // Delete dependent records in UserFavoriteArtwork
+            string deleteFavoritesQuery = "DELETE FROM [UserFavoriteArtwork] WHERE ArtworkID = @ArtworkID";
+            SqlCommand deleteFavoritesCmd = new SqlCommand(deleteFavoritesQuery, connection);
+            deleteFavoritesCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
+            deleteFavoritesCmd.ExecuteNonQuery();
+
+            // Delete the artwork
+            string deleteArtworkQuery = "DELETE FROM [Artwork] WHERE ArtworkID = @ArtworkID";
+            SqlCommand deleteArtworkCmd = new SqlCommand(deleteArtworkQuery, connection);
+            deleteArtworkCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
+            return deleteArtworkCmd.ExecuteNonQuery() > 0;
         }
 
         public Artwork GetArtworkById(int artworkId)
@@ -93,6 +111,39 @@ namespace VirtualArtGallery.Dao
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@keyword", "%" + keyword + "%");
 
+            Console.WriteLine($"Executing Query: {query} with keyword: {keyword}");
+
+            using (SqlDataReader reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    artworks.Add(new Artwork
+                    {
+                        ArtworkID = (int)reader["ArtworkID"],
+                        Title = reader["Title"].ToString() ?? string.Empty,
+                        Descriptions = reader["Descriptions"].ToString() ?? string.Empty,
+                        CreationDate = Convert.ToDateTime(reader["CreationDate"]),
+                        Mediums = reader["Mediums"].ToString() ?? string.Empty,
+                        ImageURL = reader["ImageURL"].ToString() ?? string.Empty,
+                        ArtistID = (int)reader["ArtistID"]
+                    });
+                }
+            }
+
+            if (artworks.Count == 0)
+            {
+                Console.WriteLine("No artworks found for the given keyword.");
+            }
+
+            return artworks;
+        }
+
+        public List<Artwork> GetAllArtworks()
+        {
+            List<Artwork> artworks = new List<Artwork>();
+            string query = "SELECT * FROM [Artwork]";
+            SqlCommand cmd = new SqlCommand(query, connection);
+
             using (SqlDataReader reader = cmd.ExecuteReader())
             {
                 while (reader.Read())
@@ -117,39 +168,60 @@ namespace VirtualArtGallery.Dao
         public bool AddGallery(Gallery gallery)
         {
             string query = @"INSERT INTO [Gallery] 
-                (GalleryName, Descriptions, Locations, CuratorID, OpeningHours) 
-                VALUES (@GalleryName, @Descriptions, @Locations, @CuratorID, @OpeningHours)";
+        (GalleryName, Descriptions, Locations, CuratorID, OpeningHours) 
+        OUTPUT INSERTED.GalleryID
+        VALUES (@GalleryName, @Descriptions, @Locations, @CuratorID, @OpeningHours)";
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@GalleryName", gallery.GalleryName);
             cmd.Parameters.AddWithValue("@Descriptions", gallery.Descriptions);
             cmd.Parameters.AddWithValue("@Locations", gallery.Locations);
             cmd.Parameters.AddWithValue("@CuratorID", gallery.CuratorID);
             cmd.Parameters.AddWithValue("@OpeningHours", gallery.OpeningHours);
-            return cmd.ExecuteNonQuery() > 0;
+
+            gallery.GalleryID = (int)cmd.ExecuteScalar(); // Retrieve the generated GalleryID
+            return gallery.GalleryID > 0;
         }
 
         public bool UpdateGallery(Gallery gallery)
         {
             string query = @"UPDATE [Gallery] SET 
-                GalleryName = @GalleryName, Descriptions = @Descriptions, Locations = @Locations, 
-                CuratorID = @CuratorID, OpeningHours = @OpeningHours 
-                WHERE GalleryID = @GalleryID";
+                     GalleryName = @GalleryName, 
+                     Descriptions = @Descriptions, 
+                     Locations = @Locations, 
+                     OpeningHours = @OpeningHours, 
+                     CuratorID = @CuratorID 
+                     WHERE GalleryID = @GalleryID";
+
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@GalleryName", gallery.GalleryName);
             cmd.Parameters.AddWithValue("@Descriptions", gallery.Descriptions);
             cmd.Parameters.AddWithValue("@Locations", gallery.Locations);
-            cmd.Parameters.AddWithValue("@CuratorID", gallery.CuratorID);
             cmd.Parameters.AddWithValue("@OpeningHours", gallery.OpeningHours);
+            cmd.Parameters.AddWithValue("@CuratorID", gallery.CuratorID);
             cmd.Parameters.AddWithValue("@GalleryID", gallery.GalleryID);
-            return cmd.ExecuteNonQuery() > 0;
+
+            return cmd.ExecuteNonQuery() > 0; // Return true if the update was successful
         }
 
         public bool RemoveGallery(int galleryId)
         {
-            string query = "DELETE FROM [Gallery] WHERE GalleryID = @GalleryID";
-            SqlCommand cmd = new SqlCommand(query, connection);
-            cmd.Parameters.AddWithValue("@GalleryID", galleryId);
-            return cmd.ExecuteNonQuery() > 0;
+            // Check if the gallery exists
+            string checkQuery = "SELECT COUNT(*) FROM [Gallery] WHERE GalleryID = @GalleryID";
+            SqlCommand checkCmd = new SqlCommand(checkQuery, connection);
+            checkCmd.Parameters.AddWithValue("@GalleryID", galleryId);
+
+            int count = (int)checkCmd.ExecuteScalar();
+            if (count == 0)
+            {
+                return false; // Gallery does not exist
+            }
+
+            // Remove the gallery
+            string deleteQuery = "DELETE FROM [Gallery] WHERE GalleryID = @GalleryID";
+            SqlCommand deleteCmd = new SqlCommand(deleteQuery, connection);
+            deleteCmd.Parameters.AddWithValue("@GalleryID", galleryId);
+
+            return deleteCmd.ExecuteNonQuery() > 0; // Return true if the gallery was successfully removed
         }
 
         public Gallery GetGalleryById(int galleryId)
@@ -165,11 +237,11 @@ namespace VirtualArtGallery.Dao
                     return new Gallery
                     {
                         GalleryID = (int)reader["GalleryID"],
-                        GalleryName = reader["Name"].ToString() ?? string.Empty,
-                        Descriptions = reader["Description"].ToString() ?? string.Empty,
-                        Locations = reader["Location"].ToString() ?? string.Empty,
+                        GalleryName = reader["GalleryName"].ToString() ?? string.Empty,
+                        Descriptions = reader["Descriptions"].ToString() ?? string.Empty,
+                        Locations = reader["Locations"].ToString() ?? string.Empty,
                         OpeningHours = reader["OpeningHours"].ToString() ?? string.Empty,
-                        CuratorID = (int)reader["Curator"]
+                        CuratorID = (int)reader["CuratorID"]
                     };
                 }
             }
