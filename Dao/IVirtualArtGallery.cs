@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -22,6 +22,12 @@ namespace VirtualArtGallery.Dao
         bool RemoveGallery(int galleryId);
         Gallery GetGalleryById(int galleryId);
         List<Gallery> SearchGalleries(string keyword);
+
+        // Artist Management
+        bool AddArtist(Artist artist);
+        bool UpdateArtist(Artist artist);
+        bool RemoveArtist(int artistId);
+        List<Artist> SearchArtists(string keyword);
 
         // User Favorite Artworks
         bool AddArtworkToFavorite(int userId, int artworkId);
