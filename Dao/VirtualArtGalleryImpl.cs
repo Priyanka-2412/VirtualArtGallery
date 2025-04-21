@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +17,121 @@ namespace VirtualArtGallery.Dao
         public VirtualArtGalleryImpl()
         {
             connection = DBConnUtil.GetConnection();
+        }
+
+        // Artist Management
+        public bool AddArtist(Artist artist)
+        {
+            string query = @"INSERT INTO [Artist] 
+                    (ArtistName, Biography, BirthDate, Nationality, Website, ContactInfo) 
+                    OUTPUT INSERTED.ArtistID
+                    VALUES (@ArtistName, @Biography, @BirthDate, @Nationality, @Website, @ContactInfo)";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@ArtistName", artist.ArtistName);
+            cmd.Parameters.AddWithValue("@Biography", artist.Biography);
+            cmd.Parameters.AddWithValue("@BirthDate", artist.BirthDate);
+            cmd.Parameters.AddWithValue("@Nationality", artist.Nationality);
+            cmd.Parameters.AddWithValue("@Website", artist.Website);
+            cmd.Parameters.AddWithValue("@ContactInfo", artist.ContactInfo);
+
+            try
+            {
+                var result = cmd.ExecuteScalar();
+                if (result != null && int.TryParse(result.ToString(), out int artistId))
+                {
+                    artist.ArtistID = artistId; // Ensure ArtistID is set
+                    return artist.ArtistID > 0;
+                }
+                else
+                {
+                    Console.WriteLine("Failed to retrieve ArtistID.");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error adding artist: {ex.Message}");
+                return false;
+            }
+        }
+
+
+        public bool UpdateArtist(Artist artist)
+        {
+            string query = @"UPDATE [Artist] SET 
+                             ArtistName = @ArtistName, Biography = @Biography, BirthDate = @BirthDate, 
+                             Nationality = @Nationality, Website = @Website, ContactInfo = @ContactInfo 
+                             WHERE ArtistID = @ArtistID";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@ArtistName", artist.ArtistName);
+            cmd.Parameters.AddWithValue("@Biography", artist.Biography);
+            cmd.Parameters.AddWithValue("@BirthDate", artist.BirthDate);
+            cmd.Parameters.AddWithValue("@Nationality", artist.Nationality);
+            cmd.Parameters.AddWithValue("@Website", artist.Website);
+            cmd.Parameters.AddWithValue("@ContactInfo", artist.ContactInfo);
+            cmd.Parameters.AddWithValue("@ArtistID", artist.ArtistID);
+
+            try
+            {
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating artist: {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool RemoveArtist(int artistId)
+        {
+            string query = "DELETE FROM [Artist] WHERE ArtistID = @ArtistID";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@ArtistID", artistId);
+
+            try
+            {
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error removing artist: {ex.Message}");
+                return false;
+            }
+        }
+
+        public List<Artist> SearchArtists(string keyword)
+        {
+            string query = @"SELECT * FROM [Artist] 
+                             WHERE ArtistName LIKE @Keyword OR Biography LIKE @Keyword";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@Keyword", $"%{keyword}%");
+
+            List<Artist> artists = new List<Artist>();
+            try
+            {
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        artists.Add(new Artist
+                        {
+                            ArtistID = reader.GetInt32(0),
+                            ArtistName = reader.GetString(1),
+                            Biography = reader.GetString(2),
+                            BirthDate = reader.GetDateTime(3),
+                            Nationality = reader.GetString(4),
+                            Website = reader.GetString(5),
+                            ContactInfo = reader.GetString(6)
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error searching artists: {ex.Message}");
+            }
+
+            return artists;
         }
 
         // Artwork Table (matches: [Artwork])
@@ -312,11 +427,23 @@ namespace VirtualArtGallery.Dao
 
         public List<Artwork> GetUserFavoriteArtworks(int userId)
         {
+            // First, check if the user exists
+            string userCheckQuery = "SELECT COUNT(*) FROM [Users] WHERE UserID = @UserID";
+            SqlCommand checkCmd = new SqlCommand(userCheckQuery, connection);
+            checkCmd.Parameters.AddWithValue("@UserID", userId);
+            int userCount = (int)checkCmd.ExecuteScalar();
+
+            if (userCount == 0)
+            {
+                throw new UserNotFoundException($"User with ID {userId} does not exist.");
+            }
+
+            // Now fetch favorite artworks
             List<Artwork> artworks = new List<Artwork>();
             string query = @"
-        SELECT A.* FROM [Artwork] A
-        INNER JOIN [UserFavoriteArtwork] UFA ON A.ArtworkID = UFA.ArtworkID
-        WHERE UFA.UserID = @UserID";
+            SELECT A.* FROM [Artwork] A
+            INNER JOIN [UserFavoriteArtwork] UFA ON A.ArtworkID = UFA.ArtworkID
+            WHERE UFA.UserID = @UserID";
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@UserID", userId);
 
@@ -339,5 +466,6 @@ namespace VirtualArtGallery.Dao
 
             return artworks;
         }
+
     }
 }
