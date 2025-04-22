@@ -26,7 +26,7 @@ namespace VirtualArtGallery.Dao
         // Artist Management
         bool AddArtist(Artist artist);
         bool UpdateArtist(Artist artist);
-        bool RemoveArtist(int artistId);
+        bool RemoveArtist(string artistName);
         List<Artist> SearchArtists(string keyword);
 
         // User Favorite Artworks
