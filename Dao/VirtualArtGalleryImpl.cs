@@ -55,13 +55,12 @@ namespace VirtualArtGallery.Dao
             }
         }
 
-
         public bool UpdateArtist(Artist artist)
         {
             string query = @"UPDATE [Artist] SET 
-                             ArtistName = @ArtistName, Biography = @Biography, BirthDate = @BirthDate, 
-                             Nationality = @Nationality, Website = @Website, ContactInfo = @ContactInfo 
-                             WHERE ArtistID = @ArtistID";
+                     ArtistName = @ArtistName, Biography = @Biography, BirthDate = @BirthDate, 
+                     Nationality = @Nationality, Website = @Website, ContactInfo = @ContactInfo 
+                     WHERE ArtistID = @ArtistID";
             SqlCommand cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@ArtistName", artist.ArtistName);
             cmd.Parameters.AddWithValue("@Biography", artist.Biography);
@@ -73,7 +72,14 @@ namespace VirtualArtGallery.Dao
 
             try
             {
-                return cmd.ExecuteNonQuery() > 0;
+                // Execute the SQL command
+                int rowsAffected = cmd.ExecuteNonQuery();
+
+                // Log the number of affected rows
+                Console.WriteLine($"Rows affected: {rowsAffected}");
+
+                // Return true if rows were affected, otherwise false
+                return rowsAffected > 0;
             }
             catch (Exception ex)
             {
@@ -82,22 +88,53 @@ namespace VirtualArtGallery.Dao
             }
         }
 
-        public bool RemoveArtist(int artistId)
+        public bool RemoveArtist(string artistId)
         {
-            string query = "DELETE FROM [Artist] WHERE ArtistID = @ArtistID";
-            SqlCommand cmd = new SqlCommand(query, connection);
-            cmd.Parameters.AddWithValue("@ArtistID", artistId);
+            string deleteArtistQuery = "DELETE FROM Artist WHERE ArtistID = @ArtistId";
+            using (SqlCommand cmd = new SqlCommand(deleteArtistQuery, connection))
+            {
+                cmd.Parameters.AddWithValue("@ArtistId", artistId);
+
+                int rowsAffected = cmd.ExecuteNonQuery();
+                if (rowsAffected > 0)
+                {
+                    Console.WriteLine("Artist deleted successfully.");
+                }
+                else
+                {
+                    Console.WriteLine("Artist not found or not deleted.");
+                }
+
+                return rowsAffected > 0;
+            }
+        }
+
+
+        public int GetArtistIdByName(string artistName, SqlTransaction transaction)
+        {
+            string query = "SELECT ArtistID FROM [Artist] WHERE Name = @ArtistName";
+            SqlCommand cmd = new SqlCommand(query, connection, transaction);
+            cmd.Parameters.AddWithValue("@ArtistName", artistName);
 
             try
             {
-                return cmd.ExecuteNonQuery() > 0;
+                object result = cmd.ExecuteScalar();
+                if (result != null && int.TryParse(result.ToString(), out int artistId))
+                {
+                    return artistId;
+                }
+                else
+                {
+                    return -1; // Artist not found
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error removing artist: {ex.Message}");
-                return false;
+                Console.WriteLine($"Error fetching artist ID: {ex.Message}");
+                return -1; // Return -1 if an error occurs
             }
         }
+
 
         public List<Artist> SearchArtists(string keyword)
         {
@@ -179,17 +216,22 @@ namespace VirtualArtGallery.Dao
 
         public bool RemoveArtwork(int artworkId)
         {
-            // Delete dependent records in UserFavoriteArtwork
+            // Delete from UserFavoriteArtwork table (if applicable)
             string deleteFavoritesQuery = "DELETE FROM [UserFavoriteArtwork] WHERE ArtworkID = @ArtworkID";
-            SqlCommand deleteFavoritesCmd = new SqlCommand(deleteFavoritesQuery, connection);
-            deleteFavoritesCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
-            deleteFavoritesCmd.ExecuteNonQuery();
+            using (SqlCommand deleteFavoritesCmd = new SqlCommand(deleteFavoritesQuery, connection))
+            {
+                deleteFavoritesCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
+                deleteFavoritesCmd.ExecuteNonQuery();
+            }
 
-            // Delete the artwork
+            // Delete from Artwork table
             string deleteArtworkQuery = "DELETE FROM [Artwork] WHERE ArtworkID = @ArtworkID";
-            SqlCommand deleteArtworkCmd = new SqlCommand(deleteArtworkQuery, connection);
-            deleteArtworkCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
-            return deleteArtworkCmd.ExecuteNonQuery() > 0;
+            using (SqlCommand deleteArtworkCmd = new SqlCommand(deleteArtworkQuery, connection))
+            {
+                deleteArtworkCmd.Parameters.AddWithValue("@ArtworkID", artworkId);
+                int rowsAffected = deleteArtworkCmd.ExecuteNonQuery();
+                return rowsAffected > 0;
+            }
         }
 
         public Artwork GetArtworkById(int artworkId)
@@ -251,6 +293,48 @@ namespace VirtualArtGallery.Dao
             }
 
             return artworks;
+        }
+
+        public Artwork GetArtworkByTitleAndArtist(string title, int artistId)
+        {
+            Artwork artwork = new Artwork
+            {
+                Title = string.Empty,        // Default empty string for Title
+                Descriptions = string.Empty, // Default empty string for Descriptions
+                Mediums = string.Empty,      // Default empty string for Mediums
+                ImageURL = string.Empty      // Default empty string for ImageURL
+            };
+
+            using (SqlConnection connection = new SqlConnection("your_connection_string"))
+            {
+                connection.Open(); // Open the connection
+
+                string query = "SELECT * FROM Artwork WHERE Title = @Title AND ArtistID = @ArtistID";
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@Title", title);
+                    command.Parameters.AddWithValue("@ArtistID", artistId);
+
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            artwork = new Artwork
+                            {
+                                ArtworkID = Convert.ToInt32(reader["ArtworkID"]),
+                                Title = reader["Title"].ToString() ?? string.Empty,
+                                Descriptions = reader["Descriptions"].ToString() ?? string.Empty,
+                                CreationDate = Convert.ToDateTime(reader["CreationDate"]),
+                                Mediums = reader["Mediums"].ToString() ?? string.Empty,
+                                ImageURL = reader["ImageURL"].ToString() ?? string.Empty,
+                                ArtistID = Convert.ToInt32(reader["ArtistID"])
+                            };
+                        }
+                    }
+                }
+            } // The connection will be automatically closed here when the 'using' block ends.
+
+            return artwork;
         }
 
         public List<Artwork> GetAllArtworks()
@@ -318,6 +402,21 @@ namespace VirtualArtGallery.Dao
             return cmd.ExecuteNonQuery() > 0; // Return true if the update was successful
         }
 
+        public bool GetGalleryByName(string galleryName)
+        {
+            string query = @"SELECT 1 FROM [Gallery] WHERE GalleryName = @GalleryName";
+
+            using (SqlCommand cmd = new SqlCommand(query, connection))
+            {
+                cmd.Parameters.AddWithValue("@GalleryName", galleryName);
+
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    return reader.HasRows;
+                }
+            }
+        }
+
         public bool RemoveGallery(int galleryId)
         {
             // Check if the gallery exists
@@ -331,12 +430,42 @@ namespace VirtualArtGallery.Dao
                 return false; // Gallery does not exist
             }
 
-            // Remove the gallery
-            string deleteQuery = "DELETE FROM [Gallery] WHERE GalleryID = @GalleryID";
-            SqlCommand deleteCmd = new SqlCommand(deleteQuery, connection);
-            deleteCmd.Parameters.AddWithValue("@GalleryID", galleryId);
+            // Start a transaction to ensure both deletes are done atomically
+            using (SqlTransaction transaction = connection.BeginTransaction())
+            {
+                try
+                {
+                    // Remove the references from the ArtworkGallery table
+                    string removeReferencesQuery = "DELETE FROM [ArtworkGallery] WHERE GalleryID = @GalleryID";
+                    SqlCommand removeReferencesCmd = new SqlCommand(removeReferencesQuery, connection, transaction);
+                    removeReferencesCmd.Parameters.AddWithValue("@GalleryID", galleryId);
+                    removeReferencesCmd.ExecuteNonQuery();
 
-            return deleteCmd.ExecuteNonQuery() > 0; // Return true if the gallery was successfully removed
+                    // Now, remove the gallery itself
+                    string deleteQuery = "DELETE FROM [Gallery] WHERE GalleryID = @GalleryID";
+                    SqlCommand deleteCmd = new SqlCommand(deleteQuery, connection, transaction);
+                    deleteCmd.Parameters.AddWithValue("@GalleryID", galleryId);
+                    int rowsAffected = deleteCmd.ExecuteNonQuery();
+
+                    // Commit the transaction if both deletes were successful
+                    if (rowsAffected > 0)
+                    {
+                        transaction.Commit();
+                        return true; // Gallery successfully removed
+                    }
+                    else
+                    {
+                        transaction.Rollback();
+                        return false; // Gallery could not be deleted
+                    }
+                }
+                catch (Exception)
+                {
+                    // Rollback the transaction in case of an error
+                    transaction.Rollback();
+                    return false; // Indicate failure due to an error
+                }
+            }
         }
 
         public Gallery GetGalleryById(int galleryId)
@@ -390,6 +519,162 @@ namespace VirtualArtGallery.Dao
 
             return galleries;
         }
+
+        // AddUser Method
+        public bool AddUser(Users user)
+        {
+            string query = @"INSERT INTO [Users] 
+             (Username, Passwords, Email, FirstName, LastName, DateOfBirth, ProfilePicture)
+             OUTPUT INSERTED.UserID
+             VALUES (@Username, @Passwords, @Email, @FirstName, @LastName, @DateOfBirth, @ProfilePicture)";
+
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@Username", user.Username ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Passwords", user.Passwords ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Email", user.Email ?? string.Empty);
+            cmd.Parameters.AddWithValue("@FirstName", (object?)user.FirstName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@LastName", (object?)user.LastName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@DateOfBirth", (object?)user.DateOfBirth ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ProfilePicture", (object?)user.ProfilePicture ?? DBNull.Value);
+
+            try
+            {
+                var result = cmd.ExecuteScalar();
+                if (result != null && int.TryParse(result.ToString(), out int userId))
+                {
+                    user.UserID = userId;
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine("Failed to retrieve UserID.");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error adding user: {ex.Message}");
+                return false;
+            }
+        }
+
+        // UpdateUser Method
+        public bool UpdateUser(Users user)
+        {
+            string query = @"UPDATE [Users] SET 
+             Passwords = @Passwords,
+             Email = @Email,
+             FirstName = @FirstName,
+             LastName = @LastName,
+             DateOfBirth = @DateOfBirth,
+             ProfilePicture = @ProfilePicture
+             WHERE UserID = @UserID";
+
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@Passwords", user.Passwords ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Email", user.Email ?? string.Empty);
+            cmd.Parameters.AddWithValue("@FirstName", (object?)user.FirstName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@LastName", (object?)user.LastName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@DateOfBirth", (object?)user.DateOfBirth ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ProfilePicture", (object?)user.ProfilePicture ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@UserID", user.UserID);
+
+            try
+            {
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating user: {ex.Message}");
+                return false;
+            }
+        }
+
+        // RemoveUser Method
+        public bool RemoveUser(int userId)
+        {
+            string query = "DELETE FROM [Users] WHERE UserID = @UserID";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@UserID", userId);
+
+            try
+            {
+                return cmd.ExecuteNonQuery() > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error removing user: {ex.Message}");
+                return false;
+            }
+        }
+
+        public int GetUserIdByUsername(string username)
+        {
+            string query = "SELECT UserID FROM [Users] WHERE Username = @Username";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@Username", username);
+
+            try
+            {
+                object result = cmd.ExecuteScalar();
+                if (result != null && int.TryParse(result.ToString(), out int userId))
+                {
+                    return userId;
+                }
+                else
+                {
+                    return -1; // User not found
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching user ID: {ex.Message}");
+                return -1;
+            }
+        }
+
+
+        // SearchUsers Method
+        public List<Users> SearchUsers(string keyword)
+        {
+            string query = @"SELECT * FROM [Users] 
+             WHERE Username LIKE @Keyword 
+                OR Email LIKE @Keyword 
+                OR FirstName LIKE @Keyword 
+                OR LastName LIKE @Keyword";
+            SqlCommand cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@Keyword", $"%{keyword}%");
+
+            List<Users> users = new List<Users>();
+            try
+            {
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        Users user = new Users
+                        {
+                            UserID = reader.GetInt32(reader.GetOrdinal("UserID")),
+                            Username = reader["Username"]?.ToString() ?? string.Empty,
+                            Passwords = reader["Passwords"]?.ToString() ?? string.Empty,
+                            Email = reader["Email"]?.ToString() ?? string.Empty,
+                            FirstName = reader["FirstName"]?.ToString() ?? string.Empty,
+                            LastName = reader["LastName"]?.ToString() ?? string.Empty,
+                            DateOfBirth = Convert.ToDateTime(reader["DateOfBirth"]),
+                            ProfilePicture = reader["ProfilePicture"]?.ToString() ?? string.Empty,
+                        };
+                        users.Add(user);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error searching users: {ex.Message}");
+            }
+
+            return users;
+        }
+
 
         // User_Favorite_Artwork Table
         public bool AddArtworkToFavorite(int userId, int artworkId)
